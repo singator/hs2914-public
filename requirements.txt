@@ -1,9 +1,4 @@
-gensim
-nltk
 numpy
-pandas
-voila
-scipy
-ipython
+matplotlib
 ipywidgets
-itables
+jupyter_contrib_nbextensions
