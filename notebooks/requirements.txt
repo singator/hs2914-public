@@ -1,4 +1,4 @@
-gensim==4.3.2
+gensim
 nltk==3.8.1
 numpy==1.26.3
 pandas==2.1.4
