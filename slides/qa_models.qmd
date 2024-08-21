@@ -1,0 +1,474 @@
+---
+title: "Question Answering Models"
+format: 
+  revealjs:
+    footer: "(HS2914-2410) Do not circulate without prior permission."
+    chalkboard: true
+    theme: simple
+    slide-number: true
+    scrollable: true
+    auto-stretch: false
+    progress: true
+    toc: true
+    toc-title: Contents
+    toc-depth: 1
+    css: style.css
+  pptx: 
+    toc: true
+execute: 
+  echo: false
+---
+
+```{r}
+#| echo: false
+library(knitr)
+library(tidyverse)
+library(DT)
+library(reticulate)
+if(startsWith(osVersion, "Win")){
+  use_virtualenv("C:/Users/stavg/penvs/hs2914")
+} else {
+  if(Sys.info()["nodename"] == "viknesh-OptiPlex-5070"){
+    use_virtualenv("~/penvs/hs2914/")
+  } else {
+    use_virtualenv("~/NUS/coursesTaught/penvs/hs2914/")
+  }
+}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+## Introduction to QA models {.smaller}
+
+> Q: At which club did Jurgen Klopp end his _playing_ career?
+
+::: {.fragment}
+> A: [Mainz](https://en.wikipedia.org/wiki/J%C3%BCrgen_Klopp#Early_life_and_playing_career)
+
+![Image from sportzcraazy.com](figs/klopp-old_3469337b-300x187.jpg){width=40% fig-align="center"}
+:::
+
+## Introduction to QA models {.smaller}
+
+::: {layout-ncol=2}
+
+### Applications
+
+<div>
+
+* Talking to a chatbot
+* Interacting with a search engine
+* Querying a database
+* We shall focus on **factoid answering** systems.
+
+::: {.fragment}
+Why don't we use LLMs (e.g. chatGPT) directly?
+:::
+</div>
+
+### From NEA main page
+![](figs/nea_chatbot.png)
+
+:::
+
+## Retriever/Reader Models {.smaller}
+
+```{mermaid}
+%%| echo: false
+%%| fig-align: center
+flowchart LR
+  A(Information Retrieval) --> B(Extraction)
+  A --> C(Generation)
+```
+
+::: {layout-ncol=2}
+
+### Stage 1: Information Retrieval
+
+* Given a user's query, retrieve the most relevant document(s) from a set.
+
+### Stage 2
+
+<div>
+Either:
+
+* Extract an answer from spans of text, or
+* Generate an answer using LLMs     
+  * Known as RAG (Retrieval Augmented Generation).
+</div>
+
+:::
+
+# Information Retrieval
+
+## Overall Architecture {.center}
+
+![](figs/j_m_fig_14_1_ir_architecture.png)
+
+::: {.footer}
+Image from Jurafsky & Martin, chapter 14.
+:::
+
+## Document scoring {.smaller}
+
+For query vector $\mathbf{q}$ and document vector $\mathbf{d}$,
+
+$$
+\begin{eqnarray}
+\text{score}(\mathbf{q},\;\mathbf{d}) &=& \frac{\mathbf{q} \cdot \mathbf{d}}{|\mathbf{q}|  |\mathbf{d}| } \\
+&=& \sum_{t \in \mathbf{q}} \frac{\text{tf-idf}(t,q)}{\sqrt{ \sum_{q_i \in \mathbf{q}} \text{tf-idf}(q_i, q) }} \cdot  \frac{\text{tf-idf}(t,d)}{\sqrt{ \sum_{d_i \in \mathbf{d}} \text{tf-idf}(d_i, d) }}
+\end{eqnarray}
+$$
+
+::: {.callout-tip}
+In other words, we treat the query as a new document, and find its distance to 
+all other documents in the corpus.
+:::
+
+## Recap {.smaller}
+
+The tf-idf score for term $t$ in document $d$ is
+
+\begin{eqnarray}
+\text{tf-idf}(t,d) &=& (1 + \log_{10} \text{count}(t,d) ) \times \log_{10} \frac{N}{\text{df}_t}
+\end{eqnarray}
+
+where
+
+* $N$ is the number of documents.
+* $\text{df}_t$ is the number of documents that term $t$ appears in.
+* $\text{count}(t,d)$ is the number of times term $t$ appears in document $d$
+
+## Example: Computing Document Score  {.smaller}
+
+Consider the following set of documents:
+
+::: {style="background-color: #5CA5EE4F; padding: 10px"}
+1. Sweet sweet nurse! Love?
+2. Sweet sorrow.
+3. How sweet is love?
+4. Nurse!
+:::
+
+<br> 
+
+::: {.fragment}
+
+And the following query:
+
+::: {style="background-color: #5CA5EE4F; padding: 10px"}
+sweet love
+:::
+
+:::
+
+::: {.footer}
+Example from Jurafsky & Martin, chapter 14.
+:::
+
+## Example: Computing Document Score  {.smaller}
+
+The $tf(t,d)$ values are given by:
+
+```{r}
+#| echo: false
+count_matrix <- matrix(c(2,1,1,0,0,0.0,
+                         1,0,0,0,1,0,
+                         1,0,1,1,0,1,
+                         0,1,0,0,0,0), nrow=4, byrow=TRUE)
+colnames(count_matrix) <- c("sweet", "nurse", "love", "how", "sorrow", "is")
+rownames(count_matrix) <- paste("Doc", 1:4)
+tf_mat <- ifelse(count_matrix == 0, 0, 1 + log10(count_matrix))
+kable(round(tf_mat, digits=3))
+```
+
+The $idf$ values are given by:
+
+```{r}
+#| echo: false
+idf  <- log10(4/colSums(count_matrix > 0))
+kable(round(data.frame(t(idf)), digits=3))
+```
+
+
+## Example: Computing Document Score  {.smaller}
+
+The *unnormalised* tf-idf scores are:
+
+```{r}
+#| echo: false
+
+idf_mat <- matrix(rep(idf, 4), nrow=4, byrow = TRUE)
+tf_idf <- tf_mat * idf_mat
+#tf_idf[1,] / sqrt(sum(tf_idf[1,]^2))
+kable(round(tf_idf, digits=3))
+#apply(tf_idf, 1, function(x) x/sqrt(sum(x^2) ))
+```
+
+## Example: Computing Document Score  {.smaller}
+
+The *normalised* tf-idf scores are:
+
+```{r}
+#| echo: false
+
+tf_idf_n <- t(apply(tf_idf, 1, function(x) x/sqrt(sum(x^2) )))
+kable(round(tf_idf_n, digits=3))
+```
+
+## Example: Computing Document Score  {.smaller}
+
+![](figs/j_m_fig_14_2_doc_scoring.png){width=80% fig-align="center"}
+
+## Inverted Index {.smaller}
+
+* An inverted index allows us to quickly find documents $d$ that contain query terms.
+* One such structure could consist of a dictionary of terms, that point to lists of 
+  documents that contain those terms.
+
+![](figs/j_m_fig_14_inv_index.png){width=55% fig-align="center"}
+
+## Evaluation of IR {.smaller}
+
+To assess the performance of an IR system, we
+
+1. Submit a query to it, and then categorise which of the returned results are
+   *relevant*.
+2. Based on the list, we compute *precision* and *recall* at each ranked document.
+
+$$
+\text{Precision} = \frac{|R|}{|T|}, \quad \text{Recall} = \frac{|R|}{|U|}
+$$
+where
+
+* $T$ is the length of the list returned,
+* $R$ is the number of relevant documents returned,
+* $U$ is the number of documents in the *entire collection* that are relevant.
+
+## Precision-Recall Curve {.smaller} 
+
+::: {layout-ncol=2}
+
+![](figs/j_m_fig_14_3_prec_recall_1.png)
+
+### Note
+
+1. Recall is non-decreasing.
+2. Precision jumps up when a relevant document is found, and drops otherwise.
+
+:::
+
+## Precision-Recall Curve {.smaller} 
+
+::: {layout-ncol=2}
+
+![](figs/j_m_fig_14_3_prec_recall_2.png)
+
+### Note
+
+1. Recall is non-decreasing.
+2. Precision jumps up when a relevant document is found, and drops otherwise.
+
+:::
+
+## Precision-Recall Curve {.smaller} 
+
+::: {layout-ncol=2}
+
+![](figs/j_m_fig_14_3_prec_recall_2.png)
+
+![](figs/j_m_fig_14_3_prec_recall_3.png)
+
+
+:::
+
+To fix this, we use *interpolated* precision for fixed recall values $r$
+
+$$
+\text{Interp. precision}(r) = \max_{i \ge r} \text{precision}(i)
+$$
+
+## Combining into a single number {.smaller}
+
+* A second approach allows us to compare IR systems by summarising the performance of 
+  each system into a single number (instead of a curve).
+* Let:
+  * $R_r$ be the set of relevant documents returned
+  * $\text{precision}_r(d)$ be the precision computed at the rank at which relevant 
+    document $d$ was found.
+
+
+::: {layout-ncol=2}
+
+### Average precision for single query:
+
+$$
+\text{AP} = \frac{1}{|R_r|} \sum_{d \in R_r } \text{precision}_r(d)
+$$
+
+### Average over all queries in set $Q$:
+
+$$
+\text{MAP} = \frac{1}{|Q|} \sum_{q \in Q } \text{AP}(q)
+$$
+
+:::
+
+    
+# Question Answering
+
+## Overview 
+
+![](figs/j_m_fig_14_10_qa_overview.png)
+
+
+## Datasets for retrieval-based QA models {.smaller}
+
+* Reading comprehension datasets consist of tuples (passage, question, answer).
+* Example: SQUAD
+  * Created from Wikipedia passages. Humans were asked to write questions, and 
+    identify the answer span.
+* Other similar datasets:
+  1. HotpotQA
+  2. TriviaQA
+  
+## SQUAD Example
+
+![](figs/j_m_fig_14_11_squad_dataset.png)
+
+## Explore SQUAD 
+
+```{=html}
+<iframe width="900" height="500" src="https://rajpurkar.github.io/SQuAD-explorer/explore/v2.0/dev/"></iframe>
+```
+  
+  
+## Reader: Span Extraction {.smaller}
+
+Given a passage that contains the phrase:
+
+::: {style="background-color: #5CA5EE4F; padding: 10px"}
+... Reaching 29,029 feet at its summit, Mt. Everest ...
+:::
+
+and a query:
+
+> What is the height of Mt. Everest?
+
+::: {.fragment}
+
+The reader model should return the *span*:
+
+::: {style="background-color: #5CA5EE4F; padding: 10px"}
+_29,029 feet_
+:::
+
+:::
+
+## Language Models and Probability {.smaller}
+
+* A **language model** (LM) is a model that assigns probabilities to sentences and
+  sequences of words.
+  
+\begin{multline*}
+P(\textit{I can't make bricks without clay.}) > \\ P(\textit{I can't make bricks with out clay.})
+\end{multline*}
+
+## Applications of Language Models {.smaller}
+
+* Word suggestion 
+* Grammar/spelling correction
+* Speech to text recognition
+
+::: {layout="[1,4]"}
+
+![from Whatsapp](figs/whatsapp_suggestion.jpg) 
+
+![from Word](figs/grammar_spelling_corr.png)
+
+:::
+
+## Language Models and Probability {.smaller}
+
+* A **language model** (LM) is a model that assigns probabilities to sentences and
+  sequences of words.
+  
+\begin{multline*}
+P(\textit{I can't make bricks without clay.}) > \\ P(\textit{I can't make bricks with out clay.})
+\end{multline*}
+
+* Given a passage $p$, a query $q$, a span labeling model computes the probability 
+  that each span $a$ in the passage is the answer. 
+  * The span with the highest probability is returned.
+  * This is a supervised learning problem.
+
+## Reader: Retrieval-Augmented Generation {.smaller}
+
+* Large Language Models (e.g. chatGPT) generate text based on probabilities. Hence,
+given a prompt such as 
+
+::: {style="background-color: #5CA5EE4F; padding: 10px"}
+```
+Q: Who wrote the book "The Origin of Species"? A:
+```
+:::
+
+* A large language model would generate "Charles Darwin" with _very high probability_.
+
+::: {.fragment}
+
+* To reduce the chances of veering off and to anchor it further, we 
+  augment the probability with the passages  returned from the IR stage:
+  
+::: {style="background-color: #5CA5EE4F; padding: 10px"}
+```
+... passage 1 ...
+... passage 2 ...
+...
+... passage n ...
+
+Based on the above, answer this question. 
+
+Q: Who wrote the book "The Origin of Species"? A:
+```
+:::
+
+:::
+
+## Evaluation {.smaller}
+
+* Question answering evaluated using MRR (Mean Reciprocal Rank).
+* For each test set question, the model will be made to return a short, ranked list,
+  for comparison against the human-labelled answer.
+* The reciprocal of the rank of the top-ranked answer is taken.
+  * E.g. if the fourth answer is correct, the score for that question is 1/4.
+* The score for questions that return no correct answer is 0.
+* MRR is defined by averaging over all questions:
+
+$$
+MRR = \frac{1}{|Q|} \sum_{i=1}^Q \frac{1}{\text{rank}_i}
+$$
+
+## Using Sparse versus Dense vectors {.smaller}
+
+- interdisciplinary thinking - what about sparse vectors are we using when creating an inverted index?
+- Ask students to come up with a question-answer pair based on a span of text.
+
+# Summary
+
+## Recap {.smaller}
+
+* The commonly used QA models of today use a 2-stage algorithm: retrieval of 
+  relevant documents, followed by the answer generation.
+* There are two common approaches for the second stage: span extraction and 
+  RAG.
+* Both rely on language models - being able to compute the probability of a 
+  sequence of tokens, given a context.
+* To train models on span extraction, several datasets have been curated.
+* A new set of metrics were introduced to evaluate these
+
+## Reflect {.smaller}
+
+1. What is about sparse vectors that allowed us create an index like we did earlier?
+   * Can we do the same for dense vectors?
+2. Come up with a question-answer pair based on a span of text. What considerations 
+   went into creating it?

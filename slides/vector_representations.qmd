@@ -1,0 +1,605 @@
+---
+title: "Vector Representations of Language"
+format: 
+  revealjs:
+    footer: "(HS2914-2410) Do not circulate without prior permission."
+    chalkboard: true
+    theme: simple
+    slide-number: true
+    scrollable: true
+    auto-stretch: false
+    progress: true
+    toc: true
+    toc-title: Contents
+    toc-depth: 1
+    css: style.css
+  pptx: 
+    toc: true
+execute: 
+  echo: true
+---
+
+```{r}
+#| echo: false
+library(knitr)
+library(reticulate)
+if(startsWith(osVersion, "Win")){
+  use_virtualenv("C:/Users/stavg/penvs/hs2914")
+} else {
+  if(Sys.info()["nodename"] == "viknesh-OptiPlex-5070"){
+    use_virtualenv("~/penvs/hs2914/")
+  } else {
+    use_virtualenv("~/NUS/coursesTaught/penvs/hs2914/")
+  }
+}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+
+# Introduction
+
+## Common Terminology in NLP {.smaller}
+
+* A **corpus** is a collection of documents. 
+  * Examples are a group of movie reviews, a group of essays, a group of paragraphs,
+    or just a group of tweets.
+  * Plural of corpus is **corpora**.
+* A **document** is a single unit within a corpus.
+  * Depending on the context, examples are a single sentence, a single paragraph,
+    or a single essay.
+* **Terms** are the elements that make up the document. They could be individual 
+  words, bigrams or trigrams from the sentences.
+* The **vocabulary** is the set of all terms in the corpus.
+
+
+# Sparse Vectors
+
+## A Small Twitter Corpus {.smaller}
+
+Consider the following corpus of five tweets:
+
+::: {style="background-color: #5CA5EE4F; padding: 10px"}
+1. *Never mind that - Ed Miliband has just disowned Scotland!!!*
+2. *If the tories win businesses will have fewer customers, more closures.*
+3. *Miliband just said no deal with SNP even if it lets the Tories in!!!*
+4. *Ed Miliband was so passionate he tripped off the #BBCQT stage'*
+5. *Economist makes a very well balanced case for Cameron being better than Miliband*
+:::
+
+<br>
+
+```{python py-tweet-1}
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import pandas as pd
+
+corpus = ['Never mind that - Ed Miliband has just disowned Scotland!!!', 
+          'If the tories win businesses will have fewer customers, more closures.',
+          'Miliband just said no deal with SNP even if it lets the Tories in!!!',
+          'Ed Miliband was so passionate he tripped off the #BBCQT stage',
+          'Economist makes a very well balanced case for Cameron being better than Miliband']
+vectorizer = CountVectorizer(stop_words='english')
+X = vectorizer.fit_transform(corpus)
+```
+
+There are 5 documents in the corpus above.
+
+## Document-Term Matrix (Twitter corpus) {.smaller}
+
+* The matrix below is known as a **document-term** matrix. 
+* The number of terms in this vocabulary is 26.
+<br>
+```{python, py-tweet-2}
+#| output: false
+tmp = X.toarray()
+pd.DataFrame(tmp, columns=vectorizer.get_feature_names_out())
+```
+
+|   | balanced | bbcqt | better | businesses | ... | stage | tories | tripped | win |
+|---|----------|-------|--------|------------|-----|-------|--------|---------|-----|
+|  0|        0 |     0 |      0 |          0 | ... |     0 |      0 |       0 |   0 |
+|  1|        0 |     0 |      0 |          1 | ... |     0 |      1 |       0 |   1 |
+|  2|        0 |     0 |      0 |          0 | ... |     0 |      1 |       0 |   0 |
+|  3|        0 |     1 |      0 |          0 | ... |     1 |      0 |       1 |   0 |
+|  4|        1 |     0 |      1 |          0 | ... |     0 |      0 |       0 |   0 |
+
+
+## Term-Doc Matrix (Shakespeare) {.smaller} 
+
+![Term-document matrix](figs/term-doc-shakespeare-1.png){width=70%}
+
+![Each document as a vector](figs/term-doc-shakespeare-2.png){ width=60%}
+
+## Applications of Term-Doc Matrix {.smaller}
+
+* The representation of the corpus with a term-document matrix is quite specific to 
+  the task of Information Retrieval (IR).
+* In the next section, we shall see that the focus is on representing individual words (or 
+  tokens) rather than documents.
+* In this task, the aim is to
+  1. Identify groups of documents that are similar.
+  2. Given a new document (which could be a query), return the most relevant or similar 
+     documents from the corpus.
+     
+::: {.fragment}
+
+::: {style="background-color: #5CA5EE4F; padding: 10px"}
+But what exactly do we mean by *similar*?
+:::
+
+:::
+
+## Cosine Similarity {.smaller}
+
+* Suppose that we have a vector representation of two documents $\mathbf{v}$ and 
+  $\mathbf{w}$. If the vocabulary size is $N$, then each of the vectors is of length $N$.
+* Since we are dealing with counts the coordinate values of each vector will be non-negative.
+* We use the angle $\theta$ between the vectors as a measure of their similarity:
+
+::: {layout-ncol=2}
+
+### Computation
+
+$$
+\cos \theta = \frac{\sum_{i=1}^N v_i w_i}{\sqrt{\sum_{i=1}^N v_i^2} \sqrt{\sum_{i=1}^N w_i^2}}
+$$
+
+### Similarity between plays by Shakespeare
+
+![Cosine similarity between documents](figs/term-doc-shakespeare-4.png)
+
+::: 
+
+## Term-Doc Matrix (Shakespeare) {.smaller} 
+
+Although we have been using the matrix to represent documents, we can also use
+it to represent words as vectors too!
+
+![Words as vectors](figs/term-doc-shakespeare-3.png){width=90%}
+
+::: {.fragment}
+
+* `fool` and `wit` are similar to one another, because they both appear frequently 
+   in "As You Like It" and "Twelfth Night" but not in "Julius Caesar" and 
+   "Henry V".
+* `good` is different from `fool` and `wit` because it appears in all four plays
+   with high frequency.
+   
+:::
+
+## Tf-Idf Weighting {.smaller}
+
+* We want vectors that uniquely represent each document, so words that occur 
+  commonly across all documents should be given less importance.
+* Instead of using the raw count of term $t$ in document $d$ in the matrix, we 
+  use 
+$$
+w_{t,d} = \text{tf}_{t,d} \times \text{idf}_t
+$$
+
+
+:::: {.columns}
+
+::: {.column width=50%}
+##### Term Frequency
+
+* Log of raw count of term $t$ in document $d$.
+
+$$
+\text{tf}_{t,d} = \log ( \text{count}(t,d) + 1 )
+$$
+
+:::
+
+::: {.column width=50%}
+##### Inverse Document Frequency
+
+* Inverse document frequency of term $t$
+$$
+\text{idf}_t = \log \left( \frac{n}{\text{df}_t} \right)
+$$
+
+:::
+
+::::
+
+## Tf-idf Weighting Applied {.smaller}
+
+::: {style="background-color: #5CA5EE4F; padding: 10px"}
+
+1. *Never mind that - Ed Miliband has just disowned Scotland!!!*
+2. *If the tories win businesses will have fewer customers, more closures.*
+3. *Miliband just said no deal with SNP even if it lets the Tories in!!!*
+4. *Ed Miliband was so passionate he tripped off the #BBCQT stage'*
+5. *Economist makes a very well balanced case for Cameron being better than Miliband*
+
+:::
+
+<br>
+
+:::: {.columns}
+
+::: {.column width=50% style="font-size: medium;"}
+##### Raw Counts
+
+|   | balanced | businesses | ed | tories | miliband |
+|---|----------|------------|----|--------|----------|
+| 0 | 0        | 0          | 1  | 0      | 1        |
+| 1 | 0        | 1          | 0  | 1      | 0        |
+| 2 | 0        | 0          | 0  | 1      | 1        |
+| 3 | 0        | 0          | 1  | 0      | 1        |
+| 4 | 1        | 0          | 0  | 0      | 1        |
+
+:::
+
+::: {.column width=50% style="font-size: medium;"}
+##### With Tf-Idf
+
+|   | balanced | businesses | ed   | tories | miliband |
+|---|----------|------------|------|--------|----------|
+| 0 | 0.0      | 0.0        | 1.69 | 0.00   | 1.18     |
+| 1 | 0.0      | 2.1        | 0.00 | 1.69   | 0.00     |
+| 2 | 0.0      | 0.0        | 0.00 | 1.69   | 1.18     |
+| 3 | 0.0      | 0.0        | 1.69 | 0.00   | 1.18     |
+| 4 | 2.1      | 0.0        | 0.00 | 0.00   | 1.18     |
+
+
+:::
+
+::::
+
+# Dense Vectors
+
+## Dense vs. Sparse {.smaller}
+
+:::: {.columns}
+
+::: {.column width=50%}
+Tf-idf and PPMI vectors are:
+
+* Long (depends on vocab size; length on the order of $10^4$).
+* Sparse (mostly zero entries).
+
+::: {.fragment}
+Dense vectors representing words are:
+
+* Shorter (length on order of 50 -- 1000).
+* Mostly non-zero.
+
+:::
+
+:::
+
+::: {.column width=50%}
+
+::: {layout-nrow=3}
+
+![](figs/term-context-1.png){width=400}
+
+![](figs/term-doc-shakespeare-3.png){width=400}
+
+![](figs/term-doc-shakespeare-4.png){width=400}
+
+:::
+
+:::
+
+::::
+
+::: {.footer}
+Images from Jurafsky & Martin, chapter 6.
+:::
+
+## Word2Vec Intuition {.smaller}
+
+:::{.show-text}
+13% of the United States population eats <font color="red">pizza</font> on any
+given day. Mozzarella is commonly used on <font color="red">pizza</font>, with
+the highest quality mozzarella from Naples. In Italy, 
+<font color="red">pizza</font> served in formal settings is eaten with a fork and
+knife.
+:::
+
+<br>
+
+::: {.fragment}
+**Primary task:** To "learn" a numeric vector that represents each word.
+:::
+<br>
+
+::: {.fragment}
+
+**Pretext task (stepping stone):** To train a classifier that, when given a word $w$, predicts 
+nearby context words $c$.
+
+:::
+
+## Pretext Task Training {.smaller}
+
+Given <font color="red">pizza</font>, predict context words:
+
+![](figs/word2vec-001a.png)
+
+:::{.fragment}
+
+Given <font color="red">fork</font>, predict context words:
+
+![](figs/word2vec-001b.png)
+:::
+
+::: {.footer}
+Images from [Stanford CS229 lecture on self-supervision](https://cs229.stanford.edu/notes2021spring/notes2021spring/cs229_lecture_selfsupervision_final.pdf).
+:::
+
+## Pretext Task Steps {.smaller}
+
+::: {.incremental}
+
+1. Start with *random* vectors representing each word.
+2. Move the window across corpus text.
+3. *Compute the probability* of context words, given the center word.
+4. *Update* the vectors iteratively.
+
+:::
+
+## Computing The Probability {.smaller}
+
+* Suppose that we choose an embedding dimension $n$ and that the vocab size is $l$.
+* We set up *two* vectors for each word - one for the word itself, and one for the 
+  word when it acts as a context word for others.
+
+![](figs/word2vec-compute-prob.png){fig-align="center" width=700}
+
+* "Scores" are the dot product between a word's vector and the context word vector.
+
+::: {.footer}
+Images from [Stanford CS229 lecture on self-supervision](https://cs229.stanford.edu/notes2021spring/notes2021spring/cs229_lecture_selfsupervision_final.pdf).
+:::
+
+## Self-Supervised Learning in Another Domain
+
+![](figs/word2vec-self-001.png){width=700 fig-align="center"}
+
+::: {.footer}
+Image from [Unsupervised Representation Learning by Predicting Image Rotations (2018)](https://arxiv.org/abs/1803.07728)
+:::
+
+
+## Self-Supervised Learning {.smaller}
+
+* The approach of self-supervised learning upended the traditional approach of 
+  training models.
+* The pretext task is not the end in itself.
+* Here are other domains where it is used:
+
+:::: {.columns}
+
+::: {.column width=40%}
+1. Computer vision
+2. Robotics
+3. Audio processing
+:::
+
+::: {.column width=40%}
+4. Graph data
+5. Time series
+6. Customer representation
+:::
+
+::::
+
+## Word2vec to GloVe {.smaller}
+
+* Word2vec essentially uses cosine similarity to capture semantic similarity 
+  between words. 
+* As we shall see, it has proved effective in analogy tasks, and is helpful in 
+  identifying words with similar meaning *by virtue of them occurring in similar contexts*.
+* However this may be problematic:
+
+:::{.fragment}
+
+:::{.show-text}
+*Man* is **similar** to *Woman* in that they both refer to human beings.
+:::
+
+:::
+
+
+
+:::{.fragment}
+
+However, 
+
+:::{.show-text}
+*Man* is **different** than *Woman* in that they are of different gender.
+:::
+
+:::
+
+* GloVe tries to resolve this by explicitly modeling the difference in meaning between two 
+  words $w_i$ and $w_j$ through their relationship with a third (context) word 
+  $\tilde{w}_k$:
+
+# Evaluating Embeddings
+
+## Semantic Properties {.smaller}
+
+* Dense embeddings were designed to capture *similarity*. 
+* In what sense are these words "similar"?
+  * *cars* and *automobiles*
+  * *cats* and *dogs*
+  * *coffee* and *cup*, *scalpel* and *surgeon*
+
+## Relationships Captured by Word2Vec {.smaller}
+
+![](figs/word2vec-relationships.png){fig-align="center" width=800}
+
+::: {.footer}
+Table from [Efficient Estimation of Word Representations in Vector Space (2013)](https://arxiv.org/abs/1301.3781)
+:::
+
+## Relationships Captured by GloVe {.smaller}
+
+::: {layout-ncol=2}
+
+![](figs/glove-001.jpg){fig-align="center" width=500}
+
+![](figs/glove-004.jpg){fig-align="center" width=500}
+
+:::
+
+::: {.footer}
+Images from [GloVe website](https://nlp.stanford.edu/projects/glove/).
+:::
+
+
+::: {.notes}
+1. Semantic Similarity
+
+Words that have similar meanings or are related in terms of their semantic content tend to be closer in the embedding space. For example, "king" and "queen" or "car" and "automobile" would be positioned near each other because they share semantic fields (royalty and vehicles, respectively).
+2. Syntactic Similarity
+
+Word2Vec embeddings also capture syntactic relationships between words, such as parts of speech. Words that function similarly in sentences, like "big" and "large" (adjectives) or "run" and "walk" (verbs), tend to cluster together. Moreover, it captures patterns of word use in different grammatical roles.
+3. Analogical Relationships
+
+One of the most celebrated features of Word2Vec is its ability to capture analogical relationships, famously exemplified by the vector equation "king - man + woman ≈ queen". This shows that the model can understand relationships between words beyond mere similarity, capturing complex relationships like gender or temporal changes.
+4. Thematic Similarity
+
+Words that are not necessarily semantically similar but are often used in the same context or topic areas are also found to be close in the vector space. For example, "coffee" and "mug" or "computer" and "keyboard" might be close in the embedding space because they often appear in similar contexts, even though they are not semantically similar.
+5. Functional Similarity
+
+Words with similar functions or roles in discourse, such as transition words ("however", "moreover"), can also end up being proximal in the embedding space, as their usage patterns across texts are similar.
+
+:::
+
+## Similar Words and Length of Context Window {.smaller}
+
+* *With small windows ($\pm 2$)*: nearest words are syntactically similar words in same taxonomy
+  * Hogwarts nearest neighbors are other fictional schools e.g. Sunnydale, Evernight, Blandings
+* *With large windows ($\pm 5$)*: nearest words are related words in same semantic field
+  * Hogwarts nearest neighbors are words from Harry Potter world: Dumbledore, half-blood, Malfoy
+
+## Evaluating Word Embeddings {.smaller}
+
+:::: {.columns}
+
+::: {.column width=50%}
+#### Extrinsic Evaluation
+
+* Measures performance of a model based on its impact on a downstream task.
+* Uses metrics that reflect the effectiveness of the model.
+
+::: {.callout-tip}
+##### Examples:
+  1. *How does using Word2Vec embeddings in sentiment analysis affect the ability to classify text sentiment?*
+  2. *How does machine translation improve when using GloVe embeddings?*
+:::
+
+:::
+
+::: {.column width=50%}
+#### Intrinsic Evaluation
+
+* Measures the performance of a model on the specific task it was trained for.
+* Focus on metrics for specific sub task.
+
+::: {.callout-tip}
+##### Examples:
+  1. *How well does Word2Vec capture semantic similarity between words?*
+:::
+
+:::
+
+::::
+
+## Intrinsic: Similarity {.smaller}
+
+| Dataset | Year    | Description                                            |
+|---------|---------|--------------------------------------------------------|
+| SimLex-999|2015  | Includes adjective, noun and verb pairs                 |
+| WordSim-353|2002  | Compute correlation b/w embedding and human assigned similarities for noun-pairs|
+| TOEFL|1997  | 80 questions, consisting of target word and 4 choices        |
+
+
+## Intrinsic: Analogy {.smaller}
+
+Given $a$, $b$ and $a^*$, find $b^*$ such that $a$ is to $b$ as $a^*$ is to 
+$b^*$.
+
+<br>
+
+| Author | Year    | Description                                            |
+|--------|---------|--------------------------------------------------------|
+| BATS   |2016     | Analogies in 40 word categories                        |
+| Mikolov| 2013    | Semantic-Syntactic Word Relationship                   | 
+
+## BATS Dataset
+
+::: {layout-ncol=2}
+
+![](figs/bats-1a.png){width=500}
+
+![](figs/bats-1b.png){width=500}
+:::
+
+
+## Word Embeddings not Perfect {.smaller}
+
+::: {layout-ncol=2}
+
+![](figs/bats-categories.png){width=300}
+
+
+![](figs/embeddings_performance-01.png){width=300}
+
+:::
+
+# Contextual Embedding   
+
+## Bi-directional Encoders {.smaller}
+
+* The algorithms above return a static embedding for each word. 
+* Depending on the corpus used, the embedding will be different. But each word has 
+  one, and only one embedding.
+* Deep learning models can return an embedding for a given word, depending on 
+  its surrounding words. 
+* Such dynamic embeddings allow for word disambiguation.
+
+## Contextual Embeddings from BERT {.smaller}
+
+BERT generates *contextual* embeddings for words.
+  
+![](figs/j_m_fig_11_7_bert_embeddings.png)
+
+::: {.footer}
+Image from Jurafsky & Martin chapter 11
+:::
+   
+## Word Sense Disambiguation with BERT {.smaller}
+
+![](figs/j_m_fig_11_8_wsd.png)
+
+::: {.footer}
+Image from Jurafsky & Martin chapter 11
+:::
+
+# Summary & Reflections
+
+## Recap {.smaller}
+
+* These are some of the algorithms that allow us to convert words or documents
+  into numerical representation:
+  * tf-idf
+  * word2vec
+  * GloVE
+  * BERT
+* The concept of cosine similarity is widely used in the field of NLP.
+* One of the ways in which we evaluate word embeddings is through the analogy task.
+
+## Reflect {.smaller}
+
+1. Consider the evolution from static -> dense -> contextual embeddings. What 
+   was the need that drove these changes? 
+2. In NLP, we view the text as data. Why did we have to jump through so many 
+   hoops to "record" the data? Are there other domains where we have to do 
+   something similar?
