@@ -1,0 +1,4 @@
+datasets
+nltk
+gensim
+scikit-learn
